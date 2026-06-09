@@ -1,4 +1,4 @@
-# CMake 知识点汇总（Step 0 ~ Step 4）
+# CMake 知识点汇总（Step 0 ~ Step 5）
 
 ---
 
@@ -442,18 +442,108 @@ target_link_libraries(VendorLib
 
 ---
 
+## Step 5：库类型、链接可见性与多层子目录
+
+### `add_library(... OBJECT)`
+
+```cmake
+add_library(OpAdd OBJECT)
+
+target_sources(OpAdd
+  PRIVATE
+    OpAdd.cxx
+
+  INTERFACE
+    FILE_SET HEADERS
+    FILES
+      OpAdd.h
+)
+```
+
+- 创建一个 **OBJECT 库**（对象库）
+- 源文件会被编译为 `.obj` / `.o` 文件，但不打包为 `.a` / `.lib`
+- 对象文件会自动合并到链接该库的目标中
+- 比静态库更高效，避免了打包/解包步骤
+- 适合拆分编译单元但不需要独立归档的场景
+
+### `add_library(... INTERFACE)` + `FILE_SET HEADERS`（无 FILES）
+
+```cmake
+add_library(MathLogger INTERFACE)
+
+target_sources(MathLogger
+  INTERFACE
+    FILE_SET HEADERS
+)
+```
+
+- 创建 INTERFACE 库时，`FILE_SET HEADERS` 不指定 `FILES`，默认使用当前源目录下的所有头文件
+- 适合头文件-only 的库（header-only library）
+
+### `target_link_libraries` 混合 PRIVATE / PUBLIC
+
+```cmake
+target_link_libraries(MathFunctions
+  PRIVATE
+    MathLogger
+
+  PUBLIC
+    OpAdd
+    OpMul
+    OpSub
+)
+```
+
+- 一次调用中可以同时指定 `PRIVATE` 和 `PUBLIC` 依赖
+- `PRIVATE MathLogger`：MathLogger 仅在 MathFunctions 的实现中使用，不暴露给消费者
+- `PUBLIC OpAdd/OpMul/OpSub`：这些库的头文件在 MathFunctions.h 中被引用，必须对消费者可见
+
+### `BUILD_SHARED_LIBS`
+
+```json
+"cacheVariables": {
+  "BUILD_SHARED_LIBS": "ON"
+}
+```
+
+- CMake 内置变量，控制 `add_library()` 的默认库类型
+- `ON`：默认构建共享库（`.dll` / `.so`）
+- `OFF`（默认）：默认构建静态库（`.lib` / `.a`）
+- 仅影响未显式指定类型的 `add_library()` 调用
+
+### 多层子目录结构
+
+```cmake
+# MathFunctions/CMakeLists.txt
+add_subdirectory(MathLogger)
+add_subdirectory(MathExtensions)
+
+# MathFunctions/MathExtensions/CMakeLists.txt
+add_subdirectory(OpAdd)
+add_subdirectory(OpMul)
+add_subdirectory(OpSub)
+```
+
+- `add_subdirectory` 可以嵌套使用，形成树状项目结构
+- 每个子目录拥有独立的 `CMakeLists.txt`
+- 子目录中定义的目标在整个项目中可见（全局目标名）
+
+---
+
 ## 速查表
 
 | 命令 | Step | 用途 |
 |------|------|------|
-| `cmake_minimum_required` | 0, 1, 2, 3, 4 | 设置最低 CMake 版本 |
-| `project` | 0, 1, 3, 4 | 定义项目 |
-| `add_executable` | 0, 1, 3, 4 | 创建可执行目标 |
-| `add_library` | 1, 3, 4 | 创建库目标 |
-| `target_sources` | 0, 1, 3, 4 | 添加源文件 |
-| `target_link_libraries` | 1, 3, 4 | 链接库 |
-| `add_subdirectory` | 1, 3, 4 | 添加子目录 |
-| `FILE_SET HEADERS` | 1, 3, 4 | 声明头文件集合 |
+| `cmake_minimum_required` | 0, 1, 2, 3, 4, 5 | 设置最低 CMake 版本 |
+| `project` | 0, 1, 3, 4, 5 | 定义项目 |
+| `add_executable` | 0, 1, 3, 4, 5 | 创建可执行目标 |
+| `add_library` (默认/STATIC) | 1, 3, 4, 5 | 创建静态库目标 |
+| `add_library` (OBJECT) | 5 | 创建对象库（编译但不打包） |
+| `add_library` (INTERFACE) | 4, 5 | 创建接口库（仅传递属性） |
+| `target_sources` | 0, 1, 3, 4, 5 | 添加源文件 |
+| `FILE_SET HEADERS` | 1, 3, 4, 5 | 声明头文件集合 |
+| `target_link_libraries` | 1, 3, 4, 5 | 链接库 |
+| `add_subdirectory` | 1, 3, 4, 5 | 添加子目录 |
 | `macro` / `endmacro` | 2 | 定义宏（调用者作用域） |
 | `function` / `endfunction` | 2 | 定义函数（独立作用域） |
 | `set` | 2 | 设置变量 |
@@ -466,13 +556,13 @@ target_link_libraries(VendorLib
 | `include` | 2 | 包含 .cmake 文件 |
 | `return` | 2 | 提前结束文件处理 |
 | `message` | 2 | 输出消息 |
-| `option` | 3, 4 | 定义布尔选项 |
-| `CMakePresets.json` | 3, 4 | 配置预设 |
+| `option` | 3, 4, 5 | 定义布尔选项 |
+| `CMakePresets.json` | 3, 4, 5 | 配置预设 |
 | `CMAKE_CXX_STANDARD` | 3 | 设置 C++ 标准版本 |
-| `target_compile_features` | 4 | 指定编译器特性 |
-| `target_compile_definitions` | 4 | 添加预处理宏定义 |
-| `target_compile_options` | 4 | 添加编译器选项 |
-| `CMAKE_CXX_COMPILER_ID` | 4 | 编译器标识 |
-| `INTERFACE` 库 | 4 | 无源文件，仅传递属性 |
+| `target_compile_features` | 4, 5 | 指定编译器特性 |
+| `target_compile_definitions` | 4, 5 | 添加预处理宏定义 |
+| `target_compile_options` | 4, 5 | 添加编译器选项 |
+| `CMAKE_CXX_COMPILER_ID` | 4, 5 | 编译器标识 |
 | `target_include_directories` | 4 | 添加头文件搜索路径 |
 | `target_link_directories` | 4 | 添加库文件搜索路径 |
+| `BUILD_SHARED_LIBS` | 5 | 控制默认库类型（静态/共享） |
