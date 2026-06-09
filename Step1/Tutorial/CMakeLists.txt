@@ -5,7 +5,7 @@ add_executable(Tutorial)
 
 target_sources(Tutorial 
     PRIVATE 
-    Tutorial.cxx
+        Tutorial.cxx
 )
 
 target_link_libraries(Tutorial 
