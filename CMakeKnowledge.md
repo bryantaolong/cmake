@@ -1,4 +1,4 @@
-# CMake 知识点汇总（Step 0 ~ Step 7）
+# CMake 知识点汇总（Step 0 ~ Step 8）
 
 ---
 
@@ -740,22 +740,113 @@ add_dependencies(SqrtTable RunMakeTable)
 
 ---
 
+## Step 8：测试
+
+### `option(BUILD_TESTING ...)`
+
+```cmake
+option(BUILD_TESTING "Enable testing and build tests" ON)
+```
+
+- CMake 标准变量，控制是否启用测试
+- 默认 `ON`，可通过 `-DBUILD_TESTING=OFF` 关闭
+
+### `enable_testing()`
+
+```cmake
+enable_testing()
+```
+
+- 启用 CTest 测试支持
+- 必须在 `add_test()` 之前调用
+- 通常放在项目根目录的 `CMakeLists.txt` 中
+
+### `add_test`
+
+```cmake
+add_test(
+  NAME add
+  COMMAND TestMathFunctions add
+)
+```
+
+- 注册一个测试用例
+- `NAME`：测试名称（在 `ctest` 中显示）
+- `COMMAND`：要执行的命令（可执行文件 + 参数）
+- 测试通过返回码判断成功/失败（0 = 通过）
+
+### 用函数封装重复测试注册
+
+```cmake
+function(MathFunctionTest op)
+  add_test(
+    NAME ${op}
+    COMMAND TestMathFunctions ${op}
+  )
+endfunction()
+
+MathFunctionTest(add)
+MathFunctionTest(mul)
+MathFunctionTest(sqrt)
+MathFunctionTest(sub)
+```
+
+- 当多个测试结构相似时，用 `function` 封装可以减少重复代码
+- 每次调用 `MathFunctionTest(op)` 就会注册一个以 `op` 为名的测试
+
+### 测试目标的构建模式
+
+```cmake
+# 1. 创建测试可执行文件
+add_executable(TestMathFunctions)
+
+# 2. 添加测试源文件
+target_sources(TestMathFunctions
+  PRIVATE
+    TestMathFunctions.cxx
+)
+
+# 3. 链接被测库
+target_link_libraries(TestMathFunctions
+  PRIVATE
+    MathFunctions
+)
+```
+
+- 测试本身也是一个可执行目标
+- 需要链接被测试的库
+- 通过 `add_subdirectory(Tests)` 引入测试子目录
+
+### 条件构建测试
+
+```cmake
+if(BUILD_TESTING)
+  enable_testing()
+  add_subdirectory(Tests)
+endif()
+```
+
+- 用 `option` + `if` 包裹测试目录，允许用户选择是否构建测试
+- 禁用测试可加速构建（尤其在 CI 中只做构建检查时）
+
+---
+
 ## 速查表
 
 | 命令 | Step | 用途 |
 |------|------|------|
-| `cmake_minimum_required` | 0-7 | 设置最低 CMake 版本 |
-| `project` | 0, 1, 3-7 | 定义项目 |
-| `add_executable` | 0, 1, 3-7 | 创建可执行目标 |
-| `add_library` (默认/STATIC) | 1, 3-7 | 创建静态库目标 |
+| `cmake_minimum_required` | 0-8 | 设置最低 CMake 版本 |
+| `project` | 0, 1, 3-8 | 定义项目 |
+| `add_executable` | 0, 1, 3-8 | 创建可执行目标 |
+| `add_library` (默认/STATIC) | 1, 3-8 | 创建静态库目标 |
 | `add_library` (OBJECT) | 5 | 创建对象库（编译但不打包） |
-| `add_library` (INTERFACE) | 4-7 | 创建接口库（仅传递属性） |
-| `target_sources` | 0, 1, 3-7 | 添加源文件 |
-| `FILE_SET HEADERS` | 1, 3-7 | 声明头文件集合 |
-| `target_link_libraries` | 1, 3-7 | 链接库 |
-| `add_subdirectory` | 1, 3-7 | 添加子目录 |
+| `add_library` (INTERFACE) | 4-8 | 创建接口库（仅传递属性） |
+| `target_sources` | 0, 1, 3-8 | 添加源文件 |
+| `FILE_SET HEADERS` | 1, 3-8 | 声明头文件集合 |
+| `target_link_libraries` | 1, 3-8 | 链接库 |
+| `add_subdirectory` | 1, 3-8 | 添加子目录 |
 | `macro` / `endmacro` | 2 | 定义宏（调用者作用域） |
-| `function` / `endfunction` | 2 | 定义函数（独立作用域） |
+| `function` / `endfunction` | 2, 8 | 定义函数（独立作用域） |
 | `set` | 2 | 设置变量 |
 | `PARENT_SCOPE` | 2 | 父作用域传递变量 |
 | `ARGN` | 2 | 函数的额外参数 |
@@ -766,26 +857,29 @@ add_dependencies(SqrtTable RunMakeTable)
 | `include` | 2 | 包含 .cmake 文件 |
 | `return` | 2 | 提前结束文件处理 |
 | `message` | 2 | 输出消息 |
-| `option` | 3-7 | 定义布尔选项 |
-| `CMakePresets.json` | 3-7 | 配置预设 |
+| `option` | 3-8 | 定义布尔选项 |
+| `CMakePresets.json` | 3-8 | 配置预设 |
 | `CMAKE_CXX_STANDARD` | 3 | 设置 C++ 标准版本 |
-| `target_compile_features` | 4-7 | 指定编译器特性 |
-| `target_compile_definitions` | 4-7 | 添加预处理宏定义 |
-| `target_compile_options` | 4-7 | 添加编译器选项 |
-| `CMAKE_CXX_COMPILER_ID` | 4-7 | 编译器标识 |
+| `target_compile_features` | 4-8 | 指定编译器特性 |
+| `target_compile_definitions` | 4-8 | 添加预处理宏定义 |
+| `target_compile_options` | 4-8 | 添加编译器选项 |
+| `CMAKE_CXX_COMPILER_ID` | 4-8 | 编译器标识 |
 | `target_include_directories` | 4 | 添加头文件搜索路径 |
 | `target_link_directories` | 4 | 添加库文件搜索路径 |
 | `BUILD_SHARED_LIBS` | 5 | 控制默认库类型（静态/共享） |
-| `include(CheckIPOSupported)` | 6, 7 | 检测 IPO 支持 |
-| `check_ipo_supported` | 6, 7 | 检测编译器 IPO 支持 |
-| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6, 7 | 全局启用 IPO |
-| `include(CheckIncludeFiles)` | 6, 7 | 头文件存在性检测 |
-| `check_include_files` | 6, 7 | 检测指定头文件是否存在 |
-| `include(CheckSourceCompiles)` | 6, 7 | 源码编译检测 |
-| `check_source_compiles` | 6, 7 | 尝试编译代码检测特性 |
-| `[=[...]=]` 括号语法 | 6, 7 | 多行字符串（无需转义） |
-| `add_custom_command` | 7 | 自定义命令（生成文件） |
-| `add_custom_target` | 7 | 自定义目标（触发生成命令） |
-| `add_dependencies` | 7 | 添加目标间构建顺序依赖 |
-| `CMAKE_CURRENT_BINARY_DIR` | 7 | 当前构建目录 |
-| `VERBATIM` | 7 | 确保参数正确转义 |
+| `include(CheckIPOSupported)` | 6-8 | 检测 IPO 支持 |
+| `check_ipo_supported` | 6-8 | 检测编译器 IPO 支持 |
+| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6-8 | 全局启用 IPO |
+| `include(CheckIncludeFiles)` | 6-8 | 头文件存在性检测 |
+| `check_include_files` | 6-8 | 检测指定头文件是否存在 |
+| `include(CheckSourceCompiles)` | 6-8 | 源码编译检测 |
+| `check_source_compiles` | 6-8 | 尝试编译代码检测特性 |
+| `[=[...]=]` 括号语法 | 6-8 | 多行字符串（无需转义） |
+| `add_custom_command` | 7, 8 | 自定义命令（生成文件） |
+| `add_custom_target` | 7, 8 | 自定义目标（触发生成命令） |
+| `add_dependencies` | 7, 8 | 添加目标间构建顺序依赖 |
+| `CMAKE_CURRENT_BINARY_DIR` | 7, 8 | 当前构建目录 |
+| `VERBATIM` | 7, 8 | 确保参数正确转义 |
+| `enable_testing` | 8 | 启用 CTest 测试支持 |
+| `add_test` | 8 | 注册测试用例 |
+| `BUILD_TESTING` | 8 | 控制是否构建测试 |
