@@ -1,4 +1,4 @@
-# CMake 知识点汇总（Step 0 ~ Step 6）
+# CMake 知识点汇总（Step 0 ~ Step 7）
 
 ---
 
@@ -630,20 +630,130 @@ endif()
 
 ---
 
+## Step 7：自定义命令、自定义目标与代码生成
+
+### `add_executable`（代码生成工具）
+
+```cmake
+add_executable(MakeTable)
+
+target_sources(MakeTable
+  PRIVATE
+    MakeTable.cxx
+)
+```
+
+- 创建一个构建时运行的可执行工具（build-time tool）
+- 该工具在构建过程中被编译并运行，用于生成源代码或头文件
+- 区分于最终产品（Tutorial），它是构建系统的辅助程序
+
+### `add_custom_command`（OUTPUT 形式）
+
+```cmake
+add_custom_command(
+  OUTPUT SqrtTable.h
+  COMMAND MakeTable SqrtTable.h
+  DEPENDS MakeTable
+  VERBATIM
+)
+```
+
+- 定义一个自定义命令，用于生成文件
+- `OUTPUT`：指定生成的文件（构建系统会检查该文件是否存在/是否需要重新生成）
+- `COMMAND`：要执行的命令（这里的 `MakeTable` 是构建目标，CMake 会自动使用其输出路径）
+- `DEPENDS`：命令的依赖，当 `MakeTable` 可执行文件变化时会重新运行
+- `VERBATIM`：确保参数被正确转义处理（推荐始终使用）
+- 生成的文件路径默认在 `CMAKE_CURRENT_BINARY_DIR` 中
+
+### `add_custom_target`
+
+```cmake
+add_custom_target(RunMakeTable DEPENDS SqrtTable.h)
+```
+
+- 创建一个自定义目标，不生成实际的库或可执行文件
+- `DEPENDS SqrtTable.h`：依赖于 `add_custom_command` 的 OUTPUT
+- 每次构建时都会触发（因为自定义目标总是被认为过时）
+- 确保 `add_custom_command` 的 OUTPUT 文件始终被检查和重新生成
+
+### `add_dependencies`
+
+```cmake
+add_dependencies(SqrtTable RunMakeTable)
+```
+
+- 在两个目标之间添加构建顺序依赖
+- 确保 `RunMakeTable`（自定义目标）在 `SqrtTable`（INTERFACE 库）之前构建
+- **不传递链接关系**，仅控制构建顺序
+- 用于解决生成头文件的时序问题：先生成头文件，再编译依赖它的目标
+
+### `CMAKE_CURRENT_BINARY_DIR`
+
+```cmake
+target_sources(SqrtTable
+  INTERFACE
+    FILE_SET HEADERS
+    BASE_DIRS
+      ${CMAKE_CURRENT_BINARY_DIR}
+    FILES
+      ${CMAKE_CURRENT_BINARY_DIR}/SqrtTable.h
+)
+```
+
+- CMake 内置变量，表示当前 `CMakeLists.txt` 对应的构建目录
+- `add_custom_command` 生成的文件默认在此目录中
+- `FILE_SET HEADERS` 需要将 `BASE_DIRS` 设为 `${CMAKE_CURRENT_BINARY_DIR}`，以便 `#include <SqrtTable.h>` 能正确找到生成的头文件
+
+### 代码生成模式总结
+
+```cmake
+# 1. 创建生成工具
+add_executable(MakeTable)
+target_sources(MakeTable PRIVATE MakeTable.cxx)
+
+# 2. 定义生成命令
+add_custom_command(
+  OUTPUT SqrtTable.h
+  COMMAND MakeTable SqrtTable.h
+  DEPENDS MakeTable
+  VERBATIM
+)
+
+# 3. 创建自定义目标（确保命令被触发）
+add_custom_target(RunMakeTable DEPENDS SqrtTable.h)
+
+# 4. 创建 INTERFACE 库来承载生成的头文件
+add_library(SqrtTable INTERFACE)
+target_sources(SqrtTable
+  INTERFACE
+    FILE_SET HEADERS
+    BASE_DIRS ${CMAKE_CURRENT_BINARY_DIR}
+    FILES ${CMAKE_CURRENT_BINARY_DIR}/SqrtTable.h
+)
+
+# 5. 添加构建顺序依赖
+add_dependencies(SqrtTable RunMakeTable)
+```
+
+- 完整的代码生成流程：**工具 → 命令 → 目标 → 库 → 依赖**
+- 下游目标通过 `target_link_libraries(... SqrtTable)` 即可使用生成的头文件
+
+---
+
 ## 速查表
 
 | 命令 | Step | 用途 |
 |------|------|------|
-| `cmake_minimum_required` | 0-6 | 设置最低 CMake 版本 |
-| `project` | 0, 1, 3-6 | 定义项目 |
-| `add_executable` | 0, 1, 3-6 | 创建可执行目标 |
-| `add_library` (默认/STATIC) | 1, 3-6 | 创建静态库目标 |
+| `cmake_minimum_required` | 0-7 | 设置最低 CMake 版本 |
+| `project` | 0, 1, 3-7 | 定义项目 |
+| `add_executable` | 0, 1, 3-7 | 创建可执行目标 |
+| `add_library` (默认/STATIC) | 1, 3-7 | 创建静态库目标 |
 | `add_library` (OBJECT) | 5 | 创建对象库（编译但不打包） |
-| `add_library` (INTERFACE) | 4-6 | 创建接口库（仅传递属性） |
-| `target_sources` | 0, 1, 3-6 | 添加源文件 |
-| `FILE_SET HEADERS` | 1, 3-6 | 声明头文件集合 |
-| `target_link_libraries` | 1, 3-6 | 链接库 |
-| `add_subdirectory` | 1, 3-6 | 添加子目录 |
+| `add_library` (INTERFACE) | 4-7 | 创建接口库（仅传递属性） |
+| `target_sources` | 0, 1, 3-7 | 添加源文件 |
+| `FILE_SET HEADERS` | 1, 3-7 | 声明头文件集合 |
+| `target_link_libraries` | 1, 3-7 | 链接库 |
+| `add_subdirectory` | 1, 3-7 | 添加子目录 |
 | `macro` / `endmacro` | 2 | 定义宏（调用者作用域） |
 | `function` / `endfunction` | 2 | 定义函数（独立作用域） |
 | `set` | 2 | 设置变量 |
@@ -656,21 +766,26 @@ endif()
 | `include` | 2 | 包含 .cmake 文件 |
 | `return` | 2 | 提前结束文件处理 |
 | `message` | 2 | 输出消息 |
-| `option` | 3-6 | 定义布尔选项 |
-| `CMakePresets.json` | 3-6 | 配置预设 |
+| `option` | 3-7 | 定义布尔选项 |
+| `CMakePresets.json` | 3-7 | 配置预设 |
 | `CMAKE_CXX_STANDARD` | 3 | 设置 C++ 标准版本 |
-| `target_compile_features` | 4-6 | 指定编译器特性 |
-| `target_compile_definitions` | 4-6 | 添加预处理宏定义 |
-| `target_compile_options` | 4-6 | 添加编译器选项 |
-| `CMAKE_CXX_COMPILER_ID` | 4-6 | 编译器标识 |
+| `target_compile_features` | 4-7 | 指定编译器特性 |
+| `target_compile_definitions` | 4-7 | 添加预处理宏定义 |
+| `target_compile_options` | 4-7 | 添加编译器选项 |
+| `CMAKE_CXX_COMPILER_ID` | 4-7 | 编译器标识 |
 | `target_include_directories` | 4 | 添加头文件搜索路径 |
 | `target_link_directories` | 4 | 添加库文件搜索路径 |
 | `BUILD_SHARED_LIBS` | 5 | 控制默认库类型（静态/共享） |
-| `include(CheckIPOSupported)` | 6 | 检测 IPO 支持 |
-| `check_ipo_supported` | 6 | 检测编译器 IPO 支持 |
-| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6 | 全局启用 IPO |
-| `include(CheckIncludeFiles)` | 6 | 头文件存在性检测 |
-| `check_include_files` | 6 | 检测指定头文件是否存在 |
-| `include(CheckSourceCompiles)` | 6 | 源码编译检测 |
-| `check_source_compiles` | 6 | 尝试编译代码检测特性 |
-| `[=[...]=]` 括号语法 | 6 | 多行字符串（无需转义） |
+| `include(CheckIPOSupported)` | 6, 7 | 检测 IPO 支持 |
+| `check_ipo_supported` | 6, 7 | 检测编译器 IPO 支持 |
+| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6, 7 | 全局启用 IPO |
+| `include(CheckIncludeFiles)` | 6, 7 | 头文件存在性检测 |
+| `check_include_files` | 6, 7 | 检测指定头文件是否存在 |
+| `include(CheckSourceCompiles)` | 6, 7 | 源码编译检测 |
+| `check_source_compiles` | 6, 7 | 尝试编译代码检测特性 |
+| `[=[...]=]` 括号语法 | 6, 7 | 多行字符串（无需转义） |
+| `add_custom_command` | 7 | 自定义命令（生成文件） |
+| `add_custom_target` | 7 | 自定义目标（触发生成命令） |
+| `add_dependencies` | 7 | 添加目标间构建顺序依赖 |
+| `CMAKE_CURRENT_BINARY_DIR` | 7 | 当前构建目录 |
+| `VERBATIM` | 7 | 确保参数正确转义 |
