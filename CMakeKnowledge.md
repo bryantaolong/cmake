@@ -1,4 +1,4 @@
-# CMake 知识点汇总（Step 0 ~ Step 5）
+# CMake 知识点汇总（Step 0 ~ Step 6）
 
 ---
 
@@ -530,20 +530,120 @@ add_subdirectory(OpSub)
 
 ---
 
+## Step 6：IPO、头文件检测与源码编译检测
+
+### `option` + IPO
+
+```cmake
+option(TUTORIAL_ENABLE_IPO "Check for and use IPO support" ON)
+```
+
+- 定义选项控制是否启用 IPO（Interprocedural Optimization，过程间优化）
+- IPO 可以跨编译单元进行优化（如内联、死代码消除等）
+
+### `include(CheckIPOSupported)` + `check_ipo_supported`
+
+```cmake
+include(CheckIPOSupported)
+check_ipo_supported(RESULT result OUTPUT output)
+if(result)
+  message("IPO is supported, enabling IPO")
+  set(CMAKE_INTERPROCEDURAL_OPTIMIZATION ON)
+else()
+  message(WARNING "IPO is not supported: ${output}")
+endif()
+```
+
+- `include(CheckIPOSupported)`：加载 IPO 支持检测模块
+- `check_ipo_supported(RESULT ... OUTPUT ...)`：检测当前编译器是否支持 IPO
+  - `RESULT`：返回布尔结果变量
+  - `OUTPUT`：返回详细信息变量
+- `CMAKE_INTERPROCEDURAL_OPTIMIZATION`：全局启用 IPO 的 CMake 变量
+
+### `include(CheckIncludeFiles)` + `check_include_files`
+
+```cmake
+include(CheckIncludeFiles)
+check_include_files(emmintrin.h HAS_EMMINTRIN LANGUAGE CXX)
+
+if(HAS_EMMINTRIN)
+  target_compile_definitions(MathFunctions PRIVATE TUTORIAL_USE_SSE2)
+endif()
+```
+
+- `include(CheckIncludeFiles)`：加载头文件检测模块
+- `check_include_files(<header> <result_var> LANGUAGE <lang>)`
+  - 检测指定头文件是否存在
+  - `LANGUAGE CXX`：使用 C++ 编译器检测
+  - 结果存入 `HAS_EMMINTRIN` 变量
+- 配合 `target_compile_definitions` 条件性地定义宏
+
+### `include(CheckSourceCompiles)` + `check_source_compiles`
+
+```cmake
+include(CheckSourceCompiles)
+check_source_compiles(CXX
+  [=[
+    typedef double v2df __attribute__((vector_size(16)));
+    int main() {
+      __builtin_ia32_sqrtsd(v2df{});
+    }
+  ]=]
+  HAS_GNU_BUILTIN
+)
+
+if(HAS_GNU_BUILTIN)
+  target_compile_definitions(MathFunctions PRIVATE TUTORIAL_USE_GNU_BUILTIN)
+endif()
+```
+
+- `include(CheckSourceCompiles)`：加载源码编译检测模块
+- `check_source_compiles(<lang> <code> <result_var>)`
+  - 尝试编译一段代码，检测是否成功
+  - `CXX`：使用 C++ 编译器
+  - 代码用 `[=[...]=]` 括号语法包裹（支持多行，无需转义）
+  - 结果存入 `HAS_GNU_BUILTIN` 变量
+
+### `[=[...]=]` 括号语法
+
+```cmake
+[=[
+  这是多行字符串
+  不需要转义特殊字符
+]=]
+```
+
+- CMake 的括号语法用于多行字符串
+- `=` 的数量可以增加以避免与内容中的 `]` 冲突
+- 适合嵌入源代码片段
+
+### C++ 中配合 CMake 宏的条件包含
+
+```cpp
+#ifdef TUTORIAL_USE_SSE2
+#  include <emmintrin.h>
+#endif
+```
+
+- 通过 `target_compile_definitions` 定义的宏控制头文件的条件包含
+- 仅在检测到 SSE2 支持时才引入 `<emmintrin.h>`
+
+---
+
 ## 速查表
 
 | 命令 | Step | 用途 |
 |------|------|------|
-| `cmake_minimum_required` | 0, 1, 2, 3, 4, 5 | 设置最低 CMake 版本 |
-| `project` | 0, 1, 3, 4, 5 | 定义项目 |
-| `add_executable` | 0, 1, 3, 4, 5 | 创建可执行目标 |
-| `add_library` (默认/STATIC) | 1, 3, 4, 5 | 创建静态库目标 |
+| `cmake_minimum_required` | 0-6 | 设置最低 CMake 版本 |
+| `project` | 0, 1, 3-6 | 定义项目 |
+| `add_executable` | 0, 1, 3-6 | 创建可执行目标 |
+| `add_library` (默认/STATIC) | 1, 3-6 | 创建静态库目标 |
 | `add_library` (OBJECT) | 5 | 创建对象库（编译但不打包） |
-| `add_library` (INTERFACE) | 4, 5 | 创建接口库（仅传递属性） |
-| `target_sources` | 0, 1, 3, 4, 5 | 添加源文件 |
-| `FILE_SET HEADERS` | 1, 3, 4, 5 | 声明头文件集合 |
-| `target_link_libraries` | 1, 3, 4, 5 | 链接库 |
-| `add_subdirectory` | 1, 3, 4, 5 | 添加子目录 |
+| `add_library` (INTERFACE) | 4-6 | 创建接口库（仅传递属性） |
+| `target_sources` | 0, 1, 3-6 | 添加源文件 |
+| `FILE_SET HEADERS` | 1, 3-6 | 声明头文件集合 |
+| `target_link_libraries` | 1, 3-6 | 链接库 |
+| `add_subdirectory` | 1, 3-6 | 添加子目录 |
 | `macro` / `endmacro` | 2 | 定义宏（调用者作用域） |
 | `function` / `endfunction` | 2 | 定义函数（独立作用域） |
 | `set` | 2 | 设置变量 |
@@ -556,13 +656,21 @@ add_subdirectory(OpSub)
 | `include` | 2 | 包含 .cmake 文件 |
 | `return` | 2 | 提前结束文件处理 |
 | `message` | 2 | 输出消息 |
-| `option` | 3, 4, 5 | 定义布尔选项 |
-| `CMakePresets.json` | 3, 4, 5 | 配置预设 |
+| `option` | 3-6 | 定义布尔选项 |
+| `CMakePresets.json` | 3-6 | 配置预设 |
 | `CMAKE_CXX_STANDARD` | 3 | 设置 C++ 标准版本 |
-| `target_compile_features` | 4, 5 | 指定编译器特性 |
-| `target_compile_definitions` | 4, 5 | 添加预处理宏定义 |
-| `target_compile_options` | 4, 5 | 添加编译器选项 |
-| `CMAKE_CXX_COMPILER_ID` | 4, 5 | 编译器标识 |
+| `target_compile_features` | 4-6 | 指定编译器特性 |
+| `target_compile_definitions` | 4-6 | 添加预处理宏定义 |
+| `target_compile_options` | 4-6 | 添加编译器选项 |
+| `CMAKE_CXX_COMPILER_ID` | 4-6 | 编译器标识 |
 | `target_include_directories` | 4 | 添加头文件搜索路径 |
 | `target_link_directories` | 4 | 添加库文件搜索路径 |
 | `BUILD_SHARED_LIBS` | 5 | 控制默认库类型（静态/共享） |
+| `include(CheckIPOSupported)` | 6 | 检测 IPO 支持 |
+| `check_ipo_supported` | 6 | 检测编译器 IPO 支持 |
+| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6 | 全局启用 IPO |
+| `include(CheckIncludeFiles)` | 6 | 头文件存在性检测 |
+| `check_include_files` | 6 | 检测指定头文件是否存在 |
+| `include(CheckSourceCompiles)` | 6 | 源码编译检测 |
+| `check_source_compiles` | 6 | 尝试编译代码检测特性 |
+| `[=[...]=]` 括号语法 | 6 | 多行字符串（无需转义） |
