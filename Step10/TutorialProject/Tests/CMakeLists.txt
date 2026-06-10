@@ -7,25 +7,15 @@ target_sources(TestMathFunctions
 
 # TODO1: Find the SimpleTest package. This should be a required dependency when
 #        building tests.
+find_package(SimpleTest REQUIRED)
 
 # TODO2: Add the SimpleTest::SimpleTest target to Test MathFunctions
-
 target_link_libraries(TestMathFunctions
   PRIVATE
     MathFunctions
+    SimpleTest::SimpleTest
 )
 
 # TODO3: Replace MathFunctionTest and all the calls to it with
 #        simpletest_discover_tests called on TestMathFunctions
-
-function(MathFunctionTest op)
-  add_test(
-    NAME ${op}
-    COMMAND TestMathFunctions ${op}
-  )
-endfunction()
-
-MathFunctionTest(add)
-MathFunctionTest(mul)
-MathFunctionTest(sqrt)
-MathFunctionTest(sub)
+simpletest_discover_tests(TestMathFunctions)

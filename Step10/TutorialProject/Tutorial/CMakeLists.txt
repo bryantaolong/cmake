@@ -31,6 +31,14 @@ endif()
 # TODO9: Find the path to the folder containing Unpackaged.h. The build should
 #        fail if this path is not discovered. Note that Unpackaged.h is stored
 #        in a subdirectory named "Unpackaged".
+find_path(UnpackagedIncludeFolder Unpackaged.h REQUIRED
+  PATH_SUFFIXES
+    Unpackaged
+)
 
 # TODO10: Add the discovered path to the Tutorial executable target's
 #         include directories.
+target_include_directories(Tutorial
+  PRIVATE
+    ${UnpackagedIncludeFolder}
+)

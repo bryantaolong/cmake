@@ -1,4 +1,4 @@
-# CMake 知识点汇总（Step 0 ~ Step 9）
+# CMake 知识点汇总（Step 0 ~ Step 10）
 
 ---
 
@@ -987,21 +987,144 @@ install(
 
 ---
 
+## Step 10：消费已安装的包
+
+### `find_package(<Name> REQUIRED)`
+
+```cmake
+find_package(SimpleTest REQUIRED)
+```
+
+- 查找并加载一个已安装的 CMake 包
+- `REQUIRED`：找不到时配置失败
+- 找到后会自动引入 `<Name>Config.cmake` 或 `<Name>ConfigVersion.cmake`
+- 同时引入导出的目标（如 `SimpleTest::SimpleTest`）
+
+### `CMAKE_PREFIX_PATH`
+
+```json
+"cacheVariables": {
+  "CMAKE_PREFIX_PATH": "${sourceParentDir}/install"
+}
+```
+
+- CMake 内置变量，指定 `find_package` 的搜索路径前缀列表
+- `find_package` 会在每个前缀的 `lib/cmake/<Name>/` 下查找包配置文件
+- 推荐通过 `CMakePresets.json` 设置，避免硬编码路径
+
+### `${sourceParentDir}` (CMakePresets)
+
+```json
+{
+  "binaryDir": "${sourceDir}/build",
+  "installDir": "${sourceParentDir}/install",
+  "cacheVariables": {
+    "CMAKE_PREFIX_PATH": "${sourceParentDir}/install"
+  }
+}
+```
+
+- `CMakePresets.json` 中的内置变量
+- `sourceDir`：预设的源目录
+- `sourceParentDir`：源目录的父目录
+- 用于引用预设外的路径（如共享的 install 目录）
+
+### `installDir` (CMakePresets)
+
+```json
+"installDir": "${sourceParentDir}/install"
+```
+
+- `CMakePresets.json` 字段，指定默认的安装目录
+- `cmake --install build` 会使用此路径（无需指定 `--prefix`）
+
+### 传递依赖（Transitive Dependency）
+
+```cmake
+# SimpleTest 的 CMakeLists.txt
+find_package(TransitiveDep REQUIRED)
+target_link_libraries(SimpleTest
+  INTERFACE
+    TransitiveDep::TransitiveDep
+)
+```
+
+- 一个包可以依赖其他已安装的包
+- 当下游使用 `find_package(SimpleTest)` 时，会自动传递获取 `TransitiveDep` 的依赖
+- INTERFACE 库的依赖也只能是 INTERFACE 属性
+
+### `ARCH_INDEPENDENT`（write_basic_package_version_file）
+
+```cmake
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/SimpleTestConfigVersion.cmake
+  COMPATIBILITY ExactVersion
+  ARCH_INDEPENDENT
+)
+```
+
+- `ARCH_INDEPENDENT`：版本文件与架构无关（如 header-only 库）
+- 没有此选项时，版本文件会包含路径信息，可能与架构绑定
+
+### `find_path`
+
+```cmake
+find_path(UnpackagedIncludeFolder Unpackaged.h REQUIRED
+  PATH_SUFFIXES
+    Unpackaged
+)
+```
+
+- 查找包含指定文件的目录
+- `PATH_SUFFIXES`：附加到搜索根目录后面的子目录列表
+- `REQUIRED`：找不到时配置失败
+- 结果存入 `UnpackagedIncludeFolder` 变量
+
+### `find_path` 的搜索路径
+
+- 默认会搜索 `CMAKE_INCLUDE_PATH`、`CMAKE_FRAMEWORK_PATH`、`CMAKE_PREFIX_PATH`、`CMAKE_SYSTEM_*` 等
+- 通过 `CMAKE_PREFIX_PATH` 可指向包含 `include/` 目录的 install 前缀
+- 例如：`CMAKE_PREFIX_PATH = install` + `PATH_SUFFIXES = Unpackaged` → 搜索 `install/Unpackaged/`、`install/include/Unpackaged/` 等
+
+### 将 find_path 结果添加到 include 路径
+
+```cmake
+target_include_directories(Tutorial
+  PRIVATE
+    ${UnpackagedIncludeFolder}
+)
+```
+
+- 将 `find_path` 返回的目录作为 include 搜索路径
+- 适合没有 `find_package` 支持的"裸"依赖（unpackaged dependency）
+
+### 测试自动发现（第三方包）
+
+```cmake
+simpletest_discover_tests(TestMathFunctions)
+```
+
+- 由第三方测试框架（如 SimpleTest）提供的函数
+- 自动发现测试用例，无需手动调用 `add_test()`
+- 替代之前用 `function` 封装 `add_test` 的模式
+
+---
+
 ## 速查表
 
 | 命令 | Step | 用途 |
 |------|------|------|
-| `cmake_minimum_required` | 0-9 | 设置最低 CMake 版本 |
-| `project` | 0, 1, 3-9 | 定义项目 |
-| `project(... VERSION ...)` | 9 | 为项目指定版本号 |
-| `add_executable` | 0, 1, 3-9 | 创建可执行目标 |
-| `add_library` (默认/STATIC) | 1, 3-9 | 创建静态库目标 |
+| `cmake_minimum_required` | 0-10 | 设置最低 CMake 版本 |
+| `project` | 0, 1, 3-10 | 定义项目 |
+| `project(... VERSION ...)` | 9, 10 | 为项目指定版本号 |
+| `add_executable` | 0, 1, 3-10 | 创建可执行目标 |
+| `add_library` (默认/STATIC) | 1, 3-10 | 创建静态库目标 |
 | `add_library` (OBJECT) | 5 | 创建对象库（编译但不打包） |
-| `add_library` (INTERFACE) | 4-9 | 创建接口库（仅传递属性） |
-| `target_sources` | 0, 1, 3-9 | 添加源文件 |
-| `FILE_SET HEADERS` | 1, 3-9 | 声明头文件集合 |
-| `target_link_libraries` | 1, 3-9 | 链接库 |
-| `add_subdirectory` | 1, 3-9 | 添加子目录 |
+| `add_library` (INTERFACE) | 4-10 | 创建接口库（仅传递属性） |
+| `target_sources` | 0, 1, 3-10 | 添加源文件 |
+| `FILE_SET HEADERS` | 1, 3-10 | 声明头文件集合 |
+| `target_link_libraries` | 1, 3-10 | 链接库 |
+| `add_subdirectory` | 1, 3-10 | 添加子目录 |
 | `macro` / `endmacro` | 2 | 定义宏（调用者作用域） |
 | `function` / `endfunction` | 2, 8 | 定义函数（独立作用域） |
 | `set` | 2 | 设置变量 |
@@ -1014,37 +1137,43 @@ install(
 | `include` | 2 | 包含 .cmake 文件 |
 | `return` | 2 | 提前结束文件处理 |
 | `message` | 2 | 输出消息 |
-| `option` | 3-9 | 定义布尔选项 |
-| `CMakePresets.json` | 3-9 | 配置预设 |
+| `option` | 3-10 | 定义布尔选项 |
+| `CMakePresets.json` | 3-10 | 配置预设 |
 | `CMAKE_CXX_STANDARD` | 3 | 设置 C++ 标准版本 |
-| `target_compile_features` | 4-9 | 指定编译器特性 |
-| `target_compile_definitions` | 4-9 | 添加预处理宏定义 |
-| `target_compile_options` | 4-9 | 添加编译器选项 |
-| `CMAKE_CXX_COMPILER_ID` | 4-9 | 编译器标识 |
-| `target_include_directories` | 4 | 添加头文件搜索路径 |
+| `target_compile_features` | 4-10 | 指定编译器特性 |
+| `target_compile_definitions` | 4-10 | 添加预处理宏定义 |
+| `target_compile_options` | 4-10 | 添加编译器选项 |
+| `CMAKE_CXX_COMPILER_ID` | 4-10 | 编译器标识 |
+| `target_include_directories` | 4, 10 | 添加头文件搜索路径 |
 | `target_link_directories` | 4 | 添加库文件搜索路径 |
 | `BUILD_SHARED_LIBS` | 5 | 控制默认库类型（静态/共享） |
-| `include(CheckIPOSupported)` | 6-9 | 检测 IPO 支持 |
-| `check_ipo_supported` | 6-9 | 检测编译器 IPO 支持 |
-| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6-9 | 全局启用 IPO |
-| `include(CheckIncludeFiles)` | 6-9 | 头文件存在性检测 |
-| `check_include_files` | 6-9 | 检测指定头文件是否存在 |
-| `include(CheckSourceCompiles)` | 6-9 | 源码编译检测 |
-| `check_source_compiles` | 6-9 | 尝试编译代码检测特性 |
-| `[=[...]=]` 括号语法 | 6-9 | 多行字符串（无需转义） |
-| `add_custom_command` | 7-9 | 自定义命令（生成文件） |
-| `add_custom_target` | 7-9 | 自定义目标（触发生成命令） |
-| `add_dependencies` | 7-9 | 添加目标间构建顺序依赖 |
-| `CMAKE_CURRENT_BINARY_DIR` | 7-9 | 当前构建目录 |
-| `VERBATIM` | 7-9 | 确保参数正确转义 |
-| `enable_testing` | 8, 9 | 启用 CTest 测试支持 |
-| `add_test` | 8, 9 | 注册测试用例 |
-| `BUILD_TESTING` | 8, 9 | 控制是否构建测试 |
-| `include(GNUInstallDirs)` | 9 | 加载标准安装目录变量 |
-| `CMAKE_INSTALL_LIBDIR` | 9 | 库文件安装目录 |
-| `install(TARGETS ... EXPORT ...)` | 9 | 安装目标并导出 |
-| `install(EXPORT ... NAMESPACE ...)` | 9 | 安装导出集（带命名空间） |
-| `install(FILES ... DESTINATION ...)` | 9 | 安装配置文件 |
-| `include(CMakePackageConfigHelpers)` | 9 | 包配置辅助模块 |
-| `write_basic_package_version_file` | 9 | 生成版本兼容性检查文件 |
-| `TutorialConfig.cmake` | 9 | 包配置文件（find_package 入口） |
+| `include(CheckIPOSupported)` | 6-10 | 检测 IPO 支持 |
+| `check_ipo_supported` | 6-10 | 检测编译器 IPO 支持 |
+| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6-10 | 全局启用 IPO |
+| `include(CheckIncludeFiles)` | 6-10 | 头文件存在性检测 |
+| `check_include_files` | 6-10 | 检测指定头文件是否存在 |
+| `include(CheckSourceCompiles)` | 6-10 | 源码编译检测 |
+| `check_source_compiles` | 6-10 | 尝试编译代码检测特性 |
+| `[=[...]=]` 括号语法 | 6-10 | 多行字符串（无需转义） |
+| `add_custom_command` | 7-10 | 自定义命令（生成文件） |
+| `add_custom_target` | 7-10 | 自定义目标（触发生成命令） |
+| `add_dependencies` | 7-10 | 添加目标间构建顺序依赖 |
+| `CMAKE_CURRENT_BINARY_DIR` | 7-10 | 当前构建目录 |
+| `VERBATIM` | 7-10 | 确保参数正确转义 |
+| `enable_testing` | 8-10 | 启用 CTest 测试支持 |
+| `add_test` | 8-10 | 注册测试用例 |
+| `BUILD_TESTING` | 8-10 | 控制是否构建测试 |
+| `include(GNUInstallDirs)` | 9, 10 | 加载标准安装目录变量 |
+| `CMAKE_INSTALL_LIBDIR` | 9, 10 | 库文件安装目录 |
+| `install(TARGETS ... EXPORT ...)` | 9, 10 | 安装目标并导出 |
+| `install(EXPORT ... NAMESPACE ...)` | 9, 10 | 安装导出集（带命名空间） |
+| `install(FILES ... DESTINATION ...)` | 9, 10 | 安装配置文件 |
+| `include(CMakePackageConfigHelpers)` | 9, 10 | 包配置辅助模块 |
+| `write_basic_package_version_file` | 9, 10 | 生成版本兼容性检查文件 |
+| `TutorialConfig.cmake` | 9, 10 | 包配置文件（find_package 入口） |
+| `find_package(... REQUIRED)` | 10 | 查找已安装的包 |
+| `CMAKE_PREFIX_PATH` | 10 | find_package 搜索路径前缀 |
+| `find_path(... PATH_SUFFIXES ...)` | 10 | 查找包含指定文件的目录 |
+| `ARCH_INDEPENDENT` | 10 | 版本文件与架构无关 |
+| `${sourceParentDir}` | 10 | CMakePresets 中父目录变量 |
+| `installDir` | 10 | CMakePresets 中默认安装目录 |

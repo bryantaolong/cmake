@@ -16,10 +16,15 @@ target_compile_features(SimpleTest INTERFACE cxx_std_20)
 
 # TODO6: Find the TransitiveDep package with find_package. The SimpleTest
 #        build should fail if TransitiveDep cannot be found.
+find_package(TransitiveDep REQUIRED)
 
 # TODO7: Add the TransitiveDep::TransitiveDep target to the SimpleTest interface
 #        library's links. Remember that interface libraries can only have
 #        interface properties.
+target_link_libraries(SimpleTest
+  INTERFACE
+    TransitiveDep::TransitiveDep
+)
 
 include(GNUInstallDirs)
 include(CMakePackageConfigHelpers)
