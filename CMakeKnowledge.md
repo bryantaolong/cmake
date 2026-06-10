@@ -1,4 +1,4 @@
-# CMake 知识点汇总（Step 0 ~ Step 10）
+# CMake 知识点汇总（Step 0 ~ Step 11）
 
 ---
 
@@ -1110,21 +1110,111 @@ simpletest_discover_tests(TestMathFunctions)
 
 ---
 
+## Step 11：包配置中的依赖转发与测试自动发现
+
+### `add_library(... ALIAS ...)`
+
+```cmake
+add_library(Tutorial::MathFunctions ALIAS MathFunctions)
+```
+
+- 为已存在的目标创建一个别名（alias）
+- 别名目标没有自己的属性，完全指向原目标
+- 适合在源码树内部使用命名空间风格的目标名（如 `Tutorial::MathFunctions`），与安装后导出的目标名保持一致
+- 别名目标不能被 `install(EXPORT)` 导出
+
+### `$<CONFIG>` 生成表达式
+
+```cmake
+target_compile_definitions(SimpleTest INTERFACE "SIMPLETEST_CONFIG=$<CONFIG>")
+```
+
+- `$<CONFIG>` 是 CMake 生成表达式（generator expression）
+- 在生成构建系统时被替换为当前的构建配置（如 `Debug`、`Release`、`RelWithDebInfo`、`MinSizeRel`）
+- 配合 `target_compile_definitions` 的 `INTERFACE` 用法，可以将构建配置信息传递给所有链接该库的目标
+- 在 C++ 代码中可通过 `#ifdef SIMPLETEST_CONFIG` 获取当前配置
+
+### `find_dependency` + `CMakeFindDependencyMacro`
+
+```cmake
+# SimpleTestConfig.cmake
+include(CMakeFindDependencyMacro)
+find_dependency(TransitiveDep)
+
+include(${CMAKE_CURRENT_LIST_DIR}/SimpleTestTargets.cmake)
+```
+
+- `CMakeFindDependencyMacro` 提供 `find_dependency` 函数
+- `find_dependency` 是 `find_package` 的封装，用于在包配置文件中转发传递依赖
+- 当下游使用 `find_package(SimpleTest)` 时，`SimpleTestConfig.cmake` 会自动调用 `find_dependency(TransitiveDep)` 来满足 SimpleTest 自身的传递依赖
+- 必须在使用 `find_dependency` 之前 `include(CMakeFindDependencyMacro)`
+
+### `simpletest_discover_tests`
+
+```cmake
+simpletest_discover_tests(TestMathFunctions)
+```
+
+- 由 SimpleTest 包提供的测试自动发现函数
+- 内部使用 `add_custom_command(TARGET ... POST_BUILD ...)` 在构建后执行测试发现逻辑
+- 通过 `execute_process` 运行测试可执行文件的 `--list` 命令获取所有测试用例名称
+- 自动生成 `<target>_ctests.cmake` 文件，其中包含所有 `add_test()` 调用
+- 通过 `set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES ...)` 将生成的测试文件注入到 CTest 中
+
+### 第三方测试框架的集成模式
+
+```cmake
+# 1. 消费者项目的 Tests/CMakeLists.txt
+find_package(SimpleTest REQUIRED)
+
+target_link_libraries(TestMathFunctions
+  PRIVATE
+    MathFunctions
+    SimpleTest::SimpleTest
+)
+
+simpletest_discover_tests(TestMathFunctions)
+```
+
+```cpp
+// 2. 测试源文件中使用 TEST 宏定义测试用例
+#include <SimpleTest.h>
+
+TEST("add")
+{
+  REQUIRE(mathfunctions::OpAdd(2.0, 2.0) == 4.0);
+}
+```
+
+- 第三方测试框架通过 INTERFACE 库提供头文件和宏（如 `TEST`、`REQUIRE`）
+- 消费者只需链接库并调用 `simpletest_discover_tests` 即可自动注册所有测试
+- 无需手动编写 `add_test()` 或封装重复的测试注册函数
+
+### Step 11 改动总结
+
+- **TutorialProject/MathFunctions/CMakeLists.txt**：为 `MathFunctions` 目标添加 `Tutorial::MathFunctions` 别名
+- **SimpleTest/CMakeLists.txt**：为 `SimpleTest` 目标添加 `SIMPLETEST_CONFIG=$<CONFIG>` 的 INTERFACE 编译定义
+- **SimpleTestConfig.cmake**：使用 `CMakeFindDependencyMacro` + `find_dependency` 转发传递依赖 `TransitiveDep`
+- **Tests/CMakeLists.txt**：使用 `simpletest_discover_tests(TestMathFunctions)` 替代手动 `add_test()` 调用
+
+---
+
 ## 速查表
 
 | 命令 | Step | 用途 |
 |------|------|------|
-| `cmake_minimum_required` | 0-10 | 设置最低 CMake 版本 |
-| `project` | 0, 1, 3-10 | 定义项目 |
-| `project(... VERSION ...)` | 9, 10 | 为项目指定版本号 |
-| `add_executable` | 0, 1, 3-10 | 创建可执行目标 |
-| `add_library` (默认/STATIC) | 1, 3-10 | 创建静态库目标 |
+| `cmake_minimum_required` | 0-11 | 设置最低 CMake 版本 |
+| `project` | 0, 1, 3-11 | 定义项目 |
+| `project(... VERSION ...)` | 9-11 | 为项目指定版本号 |
+| `add_executable` | 0, 1, 3-11 | 创建可执行目标 |
+| `add_library` (默认/STATIC) | 1, 3-11 | 创建静态库目标 |
 | `add_library` (OBJECT) | 5 | 创建对象库（编译但不打包） |
-| `add_library` (INTERFACE) | 4-10 | 创建接口库（仅传递属性） |
-| `target_sources` | 0, 1, 3-10 | 添加源文件 |
-| `FILE_SET HEADERS` | 1, 3-10 | 声明头文件集合 |
-| `target_link_libraries` | 1, 3-10 | 链接库 |
-| `add_subdirectory` | 1, 3-10 | 添加子目录 |
+| `add_library` (INTERFACE) | 4-11 | 创建接口库（仅传递属性） |
+| `add_library(... ALIAS ...)` | 11 | 为目标创建别名 |
+| `target_sources` | 0, 1, 3-11 | 添加源文件 |
+| `FILE_SET HEADERS` | 1, 3-11 | 声明头文件集合 |
+| `target_link_libraries` | 1, 3-11 | 链接库 |
+| `add_subdirectory` | 1, 3-11 | 添加子目录 |
 | `macro` / `endmacro` | 2 | 定义宏（调用者作用域） |
 | `function` / `endfunction` | 2, 8 | 定义函数（独立作用域） |
 | `set` | 2 | 设置变量 |
@@ -1137,43 +1227,47 @@ simpletest_discover_tests(TestMathFunctions)
 | `include` | 2 | 包含 .cmake 文件 |
 | `return` | 2 | 提前结束文件处理 |
 | `message` | 2 | 输出消息 |
-| `option` | 3-10 | 定义布尔选项 |
-| `CMakePresets.json` | 3-10 | 配置预设 |
+| `option` | 3-11 | 定义布尔选项 |
+| `CMakePresets.json` | 3-11 | 配置预设 |
 | `CMAKE_CXX_STANDARD` | 3 | 设置 C++ 标准版本 |
-| `target_compile_features` | 4-10 | 指定编译器特性 |
-| `target_compile_definitions` | 4-10 | 添加预处理宏定义 |
-| `target_compile_options` | 4-10 | 添加编译器选项 |
-| `CMAKE_CXX_COMPILER_ID` | 4-10 | 编译器标识 |
-| `target_include_directories` | 4, 10 | 添加头文件搜索路径 |
+| `target_compile_features` | 4-11 | 指定编译器特性 |
+| `target_compile_definitions` | 4-11 | 添加预处理宏定义 |
+| `target_compile_options` | 4-11 | 添加编译器选项 |
+| `CMAKE_CXX_COMPILER_ID` | 4-11 | 编译器标识 |
+| `target_include_directories` | 4, 10-11 | 添加头文件搜索路径 |
 | `target_link_directories` | 4 | 添加库文件搜索路径 |
 | `BUILD_SHARED_LIBS` | 5 | 控制默认库类型（静态/共享） |
-| `include(CheckIPOSupported)` | 6-10 | 检测 IPO 支持 |
-| `check_ipo_supported` | 6-10 | 检测编译器 IPO 支持 |
-| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6-10 | 全局启用 IPO |
-| `include(CheckIncludeFiles)` | 6-10 | 头文件存在性检测 |
-| `check_include_files` | 6-10 | 检测指定头文件是否存在 |
-| `include(CheckSourceCompiles)` | 6-10 | 源码编译检测 |
-| `check_source_compiles` | 6-10 | 尝试编译代码检测特性 |
-| `[=[...]=]` 括号语法 | 6-10 | 多行字符串（无需转义） |
-| `add_custom_command` | 7-10 | 自定义命令（生成文件） |
-| `add_custom_target` | 7-10 | 自定义目标（触发生成命令） |
-| `add_dependencies` | 7-10 | 添加目标间构建顺序依赖 |
-| `CMAKE_CURRENT_BINARY_DIR` | 7-10 | 当前构建目录 |
-| `VERBATIM` | 7-10 | 确保参数正确转义 |
-| `enable_testing` | 8-10 | 启用 CTest 测试支持 |
-| `add_test` | 8-10 | 注册测试用例 |
-| `BUILD_TESTING` | 8-10 | 控制是否构建测试 |
-| `include(GNUInstallDirs)` | 9, 10 | 加载标准安装目录变量 |
-| `CMAKE_INSTALL_LIBDIR` | 9, 10 | 库文件安装目录 |
-| `install(TARGETS ... EXPORT ...)` | 9, 10 | 安装目标并导出 |
-| `install(EXPORT ... NAMESPACE ...)` | 9, 10 | 安装导出集（带命名空间） |
-| `install(FILES ... DESTINATION ...)` | 9, 10 | 安装配置文件 |
-| `include(CMakePackageConfigHelpers)` | 9, 10 | 包配置辅助模块 |
-| `write_basic_package_version_file` | 9, 10 | 生成版本兼容性检查文件 |
-| `TutorialConfig.cmake` | 9, 10 | 包配置文件（find_package 入口） |
-| `find_package(... REQUIRED)` | 10 | 查找已安装的包 |
-| `CMAKE_PREFIX_PATH` | 10 | find_package 搜索路径前缀 |
-| `find_path(... PATH_SUFFIXES ...)` | 10 | 查找包含指定文件的目录 |
-| `ARCH_INDEPENDENT` | 10 | 版本文件与架构无关 |
-| `${sourceParentDir}` | 10 | CMakePresets 中父目录变量 |
-| `installDir` | 10 | CMakePresets 中默认安装目录 |
+| `include(CheckIPOSupported)` | 6-11 | 检测 IPO 支持 |
+| `check_ipo_supported` | 6-11 | 检测编译器 IPO 支持 |
+| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6-11 | 全局启用 IPO |
+| `include(CheckIncludeFiles)` | 6-11 | 头文件存在性检测 |
+| `check_include_files` | 6-11 | 检测指定头文件是否存在 |
+| `include(CheckSourceCompiles)` | 6-11 | 源码编译检测 |
+| `check_source_compiles` | 6-11 | 尝试编译代码检测特性 |
+| `[=[...]=]` 括号语法 | 6-11 | 多行字符串（无需转义） |
+| `add_custom_command` | 7-11 | 自定义命令（生成文件） |
+| `add_custom_target` | 7-11 | 自定义目标（触发生成命令） |
+| `add_dependencies` | 7-11 | 添加目标间构建顺序依赖 |
+| `CMAKE_CURRENT_BINARY_DIR` | 7-11 | 当前构建目录 |
+| `VERBATIM` | 7-11 | 确保参数正确转义 |
+| `enable_testing` | 8-11 | 启用 CTest 测试支持 |
+| `add_test` | 8-11 | 注册测试用例 |
+| `BUILD_TESTING` | 8-11 | 控制是否构建测试 |
+| `include(GNUInstallDirs)` | 9-11 | 加载标准安装目录变量 |
+| `CMAKE_INSTALL_LIBDIR` | 9-11 | 库文件安装目录 |
+| `install(TARGETS ... EXPORT ...)` | 9-11 | 安装目标并导出 |
+| `install(EXPORT ... NAMESPACE ...)` | 9-11 | 安装导出集（带命名空间） |
+| `install(FILES ... DESTINATION ...)` | 9-11 | 安装配置文件 |
+| `include(CMakePackageConfigHelpers)` | 9-11 | 包配置辅助模块 |
+| `write_basic_package_version_file` | 9-11 | 生成版本兼容性检查文件 |
+| `TutorialConfig.cmake` | 9-11 | 包配置文件（find_package 入口） |
+| `find_package(... REQUIRED)` | 10-11 | 查找已安装的包 |
+| `CMAKE_PREFIX_PATH` | 10-11 | find_package 搜索路径前缀 |
+| `find_path(... PATH_SUFFIXES ...)` | 10-11 | 查找包含指定文件的目录 |
+| `ARCH_INDEPENDENT` | 10-11 | 版本文件与架构无关 |
+| `${sourceParentDir}` | 10-11 | CMakePresets 中父目录变量 |
+| `installDir` | 10-11 | CMakePresets 中默认安装目录 |
+| `$<CONFIG>` | 11 | 生成表达式：当前构建配置 |
+| `find_dependency` | 11 | 在 Config 文件中转发传递依赖 |
+| `CMakeFindDependencyMacro` | 11 | 提供 find_dependency 函数 |
+| `simpletest_discover_tests` | 11 | 第三方测试框架的自动测试发现函数 |

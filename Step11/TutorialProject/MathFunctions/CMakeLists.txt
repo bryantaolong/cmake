@@ -1,5 +1,6 @@
 add_library(MathFunctions)
 # TODO1: Add an alias for the MathFunctions library to match the exported target
+add_library(Tutorial::MathFunctions ALIAS MathFunctions)
 
 target_sources(MathFunctions
   PRIVATE

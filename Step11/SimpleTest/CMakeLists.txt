@@ -16,6 +16,7 @@ target_compile_features(SimpleTest INTERFACE cxx_std_20)
 
 # TODO2: Add a compile definition that sets SIMPLETEST_CONFIG=$<CONFIG>
 #        on the SimpleTest target
+target_compile_definitions(SimpleTest INTERFACE "SIMPLETEST_CONFIG=$<CONFIG>")
 
 find_package(TransitiveDep REQUIRED)
 target_link_libraries(SimpleTest
