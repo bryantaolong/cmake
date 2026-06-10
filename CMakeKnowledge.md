@@ -1,4 +1,4 @@
-# CMake 知识点汇总（Step 0 ~ Step 8）
+# CMake 知识点汇总（Step 0 ~ Step 9）
 
 ---
 
@@ -831,20 +831,177 @@ endif()
 
 ---
 
+## Step 9：安装与打包
+
+### `project(... VERSION ...)`
+
+```cmake
+project(Tutorial
+  VERSION 1.0.0
+)
+```
+
+- 为项目指定版本号
+- 自动设置变量：`PROJECT_VERSION`、`PROJECT_VERSION_MAJOR`、`PROJECT_VERSION_MINOR`、`PROJECT_VERSION_PATCH`
+- 供后续 `write_basic_package_version_file` 使用
+
+### `include(GNUInstallDirs)`
+
+```cmake
+include(GNUInstallDirs)
+```
+
+- 加载 GNU 标准安装目录变量模块
+- 提供跨平台的安装路径变量：
+  - `CMAKE_INSTALL_BINDIR`：可执行文件目录（`bin`）
+  - `CMAKE_INSTALL_LIBDIR`：库文件目录（`lib` 或 `lib64`）
+  - `CMAKE_INSTALL_INCLUDEDIR`：头文件目录（`include`）
+- 推荐在所有 `install()` 中使用这些变量而非硬编码路径
+
+### `install(TARGETS ... EXPORT ...)`
+
+```cmake
+install(
+  TARGETS Tutorial
+  EXPORT TutorialTargets
+)
+```
+
+- 安装目标到系统目录
+- `EXPORT`：将目标添加到一个导出集（export set），供其他项目通过 `find_package` 使用
+
+### `install(TARGETS ... EXPORT ... FILE_SET HEADERS)`
+
+```cmake
+install(
+  TARGETS MathFunctions OpAdd OpMul OpSub MathLogger SqrtTable
+  EXPORT TutorialTargets
+  FILE_SET HEADERS
+)
+```
+
+- 安装目标时同时安装其 `FILE_SET HEADERS` 中声明的头文件
+- 头文件会按照 `BASE_DIRS` 的结构安装到 `CMAKE_INSTALL_INCLUDEDIR`
+
+### `install(EXPORT ... DESTINATION ... NAMESPACE ...)`
+
+```cmake
+install(
+  EXPORT TutorialTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Tutorial
+  NAMESPACE Tutorial::
+)
+```
+
+- 安装导出集文件（`TutorialTargets.cmake`）
+- `DESTINATION`：导出文件的安装路径
+- `NAMESPACE`：为导出的目标添加命名空间前缀
+  - 下游使用时需写 `Tutorial::MathFunctions` 而非 `MathFunctions`
+  - 避免目标名冲突
+
+### `include(CMakePackageConfigHelpers)` + `write_basic_package_version_file`
+
+```cmake
+include(CMakePackageConfigHelpers)
+
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/TutorialConfigVersion.cmake
+  COMPATIBILITY ExactVersion
+)
+```
+
+- `include(CMakePackageConfigHelpers)`：加载包配置辅助模块
+- `write_basic_package_version_file`：生成版本兼容性检查文件
+  - `COMPATIBILITY ExactVersion`：要求 `find_package(Tutorial 1.0.0)` 必须精确匹配版本
+  - 其他选项：`AnyNewerVersion`、`SameMajorVersion`、`SameMinorVersion`
+
+### `install(FILES ... DESTINATION ...)`
+
+```cmake
+install(
+  FILES
+    cmake/TutorialConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/TutorialConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Tutorial
+)
+```
+
+- 安装配置文件到指定目录
+- `TutorialConfig.cmake`：包配置文件，定义 `find_package` 所需的导入逻辑
+- `TutorialConfigVersion.cmake`：版本检查文件，由 `write_basic_package_version_file` 生成
+- 两者必须安装到同一目录
+
+### `TutorialConfig.cmake` 配置文件
+
+```cmake
+# cmake/TutorialConfig.cmake
+include(${CMAKE_CURRENT_LIST_DIR}/TutorialTargets.cmake)
+```
+
+- 包配置文件，`find_package(Tutorial)` 时会自动加载
+- `CMAKE_CURRENT_LIST_DIR`：当前 `.cmake` 文件所在目录
+- 主要职责是引入 `TutorialTargets.cmake`（由 `install(EXPORT)` 生成）
+- 下游通过 `find_package(Tutorial)` + `target_link_libraries(... Tutorial::MathFunctions)` 使用
+
+### 完整的安装与打包流程
+
+```cmake
+# 1. 设置项目版本
+project(Tutorial VERSION 1.0.0)
+
+# 2. 加载标准安装目录
+include(GNUInstallDirs)
+
+# 3. 安装目标并导出
+install(
+  TARGETS MathFunctions OpAdd OpMul OpSub MathLogger SqrtTable
+  EXPORT TutorialTargets
+  FILE_SET HEADERS
+)
+
+# 4. 安装导出集（带命名空间）
+install(
+  EXPORT TutorialTargets
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Tutorial
+  NAMESPACE Tutorial::
+)
+
+# 5. 生成版本文件
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file(
+  ${CMAKE_CURRENT_BINARY_DIR}/TutorialConfigVersion.cmake
+  COMPATIBILITY ExactVersion
+)
+
+# 6. 安装配置文件和版本文件
+install(
+  FILES
+    cmake/TutorialConfig.cmake
+    ${CMAKE_CURRENT_BINARY_DIR}/TutorialConfigVersion.cmake
+  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/Tutorial
+)
+```
+
+- 安装后，下游项目可通过 `find_package(Tutorial REQUIRED)` 使用
+- 所有目标通过 `Tutorial::` 命名空间访问
+
+---
+
 ## 速查表
 
 | 命令 | Step | 用途 |
 |------|------|------|
-| `cmake_minimum_required` | 0-8 | 设置最低 CMake 版本 |
-| `project` | 0, 1, 3-8 | 定义项目 |
-| `add_executable` | 0, 1, 3-8 | 创建可执行目标 |
-| `add_library` (默认/STATIC) | 1, 3-8 | 创建静态库目标 |
+| `cmake_minimum_required` | 0-9 | 设置最低 CMake 版本 |
+| `project` | 0, 1, 3-9 | 定义项目 |
+| `project(... VERSION ...)` | 9 | 为项目指定版本号 |
+| `add_executable` | 0, 1, 3-9 | 创建可执行目标 |
+| `add_library` (默认/STATIC) | 1, 3-9 | 创建静态库目标 |
 | `add_library` (OBJECT) | 5 | 创建对象库（编译但不打包） |
-| `add_library` (INTERFACE) | 4-8 | 创建接口库（仅传递属性） |
-| `target_sources` | 0, 1, 3-8 | 添加源文件 |
-| `FILE_SET HEADERS` | 1, 3-8 | 声明头文件集合 |
-| `target_link_libraries` | 1, 3-8 | 链接库 |
-| `add_subdirectory` | 1, 3-8 | 添加子目录 |
+| `add_library` (INTERFACE) | 4-9 | 创建接口库（仅传递属性） |
+| `target_sources` | 0, 1, 3-9 | 添加源文件 |
+| `FILE_SET HEADERS` | 1, 3-9 | 声明头文件集合 |
+| `target_link_libraries` | 1, 3-9 | 链接库 |
+| `add_subdirectory` | 1, 3-9 | 添加子目录 |
 | `macro` / `endmacro` | 2 | 定义宏（调用者作用域） |
 | `function` / `endfunction` | 2, 8 | 定义函数（独立作用域） |
 | `set` | 2 | 设置变量 |
@@ -857,29 +1014,37 @@ endif()
 | `include` | 2 | 包含 .cmake 文件 |
 | `return` | 2 | 提前结束文件处理 |
 | `message` | 2 | 输出消息 |
-| `option` | 3-8 | 定义布尔选项 |
-| `CMakePresets.json` | 3-8 | 配置预设 |
+| `option` | 3-9 | 定义布尔选项 |
+| `CMakePresets.json` | 3-9 | 配置预设 |
 | `CMAKE_CXX_STANDARD` | 3 | 设置 C++ 标准版本 |
-| `target_compile_features` | 4-8 | 指定编译器特性 |
-| `target_compile_definitions` | 4-8 | 添加预处理宏定义 |
-| `target_compile_options` | 4-8 | 添加编译器选项 |
-| `CMAKE_CXX_COMPILER_ID` | 4-8 | 编译器标识 |
+| `target_compile_features` | 4-9 | 指定编译器特性 |
+| `target_compile_definitions` | 4-9 | 添加预处理宏定义 |
+| `target_compile_options` | 4-9 | 添加编译器选项 |
+| `CMAKE_CXX_COMPILER_ID` | 4-9 | 编译器标识 |
 | `target_include_directories` | 4 | 添加头文件搜索路径 |
 | `target_link_directories` | 4 | 添加库文件搜索路径 |
 | `BUILD_SHARED_LIBS` | 5 | 控制默认库类型（静态/共享） |
-| `include(CheckIPOSupported)` | 6-8 | 检测 IPO 支持 |
-| `check_ipo_supported` | 6-8 | 检测编译器 IPO 支持 |
-| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6-8 | 全局启用 IPO |
-| `include(CheckIncludeFiles)` | 6-8 | 头文件存在性检测 |
-| `check_include_files` | 6-8 | 检测指定头文件是否存在 |
-| `include(CheckSourceCompiles)` | 6-8 | 源码编译检测 |
-| `check_source_compiles` | 6-8 | 尝试编译代码检测特性 |
-| `[=[...]=]` 括号语法 | 6-8 | 多行字符串（无需转义） |
-| `add_custom_command` | 7, 8 | 自定义命令（生成文件） |
-| `add_custom_target` | 7, 8 | 自定义目标（触发生成命令） |
-| `add_dependencies` | 7, 8 | 添加目标间构建顺序依赖 |
-| `CMAKE_CURRENT_BINARY_DIR` | 7, 8 | 当前构建目录 |
-| `VERBATIM` | 7, 8 | 确保参数正确转义 |
-| `enable_testing` | 8 | 启用 CTest 测试支持 |
-| `add_test` | 8 | 注册测试用例 |
-| `BUILD_TESTING` | 8 | 控制是否构建测试 |
+| `include(CheckIPOSupported)` | 6-9 | 检测 IPO 支持 |
+| `check_ipo_supported` | 6-9 | 检测编译器 IPO 支持 |
+| `CMAKE_INTERPROCEDURAL_OPTIMIZATION` | 6-9 | 全局启用 IPO |
+| `include(CheckIncludeFiles)` | 6-9 | 头文件存在性检测 |
+| `check_include_files` | 6-9 | 检测指定头文件是否存在 |
+| `include(CheckSourceCompiles)` | 6-9 | 源码编译检测 |
+| `check_source_compiles` | 6-9 | 尝试编译代码检测特性 |
+| `[=[...]=]` 括号语法 | 6-9 | 多行字符串（无需转义） |
+| `add_custom_command` | 7-9 | 自定义命令（生成文件） |
+| `add_custom_target` | 7-9 | 自定义目标（触发生成命令） |
+| `add_dependencies` | 7-9 | 添加目标间构建顺序依赖 |
+| `CMAKE_CURRENT_BINARY_DIR` | 7-9 | 当前构建目录 |
+| `VERBATIM` | 7-9 | 确保参数正确转义 |
+| `enable_testing` | 8, 9 | 启用 CTest 测试支持 |
+| `add_test` | 8, 9 | 注册测试用例 |
+| `BUILD_TESTING` | 8, 9 | 控制是否构建测试 |
+| `include(GNUInstallDirs)` | 9 | 加载标准安装目录变量 |
+| `CMAKE_INSTALL_LIBDIR` | 9 | 库文件安装目录 |
+| `install(TARGETS ... EXPORT ...)` | 9 | 安装目标并导出 |
+| `install(EXPORT ... NAMESPACE ...)` | 9 | 安装导出集（带命名空间） |
+| `install(FILES ... DESTINATION ...)` | 9 | 安装配置文件 |
+| `include(CMakePackageConfigHelpers)` | 9 | 包配置辅助模块 |
+| `write_basic_package_version_file` | 9 | 生成版本兼容性检查文件 |
+| `TutorialConfig.cmake` | 9 | 包配置文件（find_package 入口） |
